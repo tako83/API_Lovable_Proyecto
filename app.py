@@ -1,10 +1,10 @@
     # app.py - Código Principal de la API para Lovable
     # Este archivo contiene la lógica principal de la API Flask.
 
-    from flask import Flask, request, jsonify
-    import cx_Oracle # Importa el módulo para conectar con Oracle
-    import os
-    from datetime import datetime
+from flask import Flask, request, jsonify
+import cx_Oracle # Importa el módulo para conectar con Oracle
+import os
+from datetime import datetime
 
     app = Flask(__name__)
 
