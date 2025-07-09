@@ -1,0 +1,8 @@
+    # requirements.txt - Dependencias de la API Flask
+    # Este archivo lista todas las librerías de Python necesarias para ejecutar la API.
+
+    Flask==2.3.2
+    cx_Oracle==8.3.0
+    python-dotenv==1.0.0 # Opcional, para cargar variables de entorno de un archivo .env
+    gunicorn  #
+    
