@@ -8,20 +8,20 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-    # --- Configuración de la Base de Datos ---
-    # Las credenciales se cargan de variables de entorno o usan valores por defecto.
-    # La contraseña 'madiaz01' se usa como valor por defecto, confirmada por el usuario.
-    DB_USER = os.environ.get('DB_USER', 'madiaz')
-    DB_PASSWORD = os.environ.get('DB_PASSWORD', 'madiaz01') # Contraseña confirmada por el usuario
-    DB_HOST = os.environ.get('DB_HOST', '10.212.135.10')
-    DB_PORT = os.environ.get('DB_PORT', '1521')
-    DB_SERVICE_NAME = os.environ.get('DB_SERVICE_NAME', 'ATRIOD')
+# --- Configuración de la Base de Datos ---
+# Las credenciales se cargan de variables de entorno o usan valores por defecto.
+# La contraseña 'madiaz01' se usa como valor por defecto, confirmada por el usuario.
+DB_USER = os.environ.get('DB_USER', 'madiaz')
+DB_PASSWORD = os.environ.get('DB_PASSWORD', 'madiaz01') # Contraseña confirmada por el usuario
+DB_HOST = os.environ.get('DB_HOST', '10.212.135.10')
+DB_PORT = os.environ.get('DB_PORT', '1521')
+DB_SERVICE_NAME = os.environ.get('DB_SERVICE_NAME', 'ATRIOD')
 
-    # Cadena de conexión Oracle
-    # Formato: usuario/contraseña@host:port/service_name
-    ORACLE_CONNECTION_STRING = f"{DB_USER}/{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_SERVICE_NAME}"
+# Cadena de conexión Oracle
+# Formato: usuario/contraseña@host:port/service_name
+ORACLE_CONNECTION_STRING = f"{DB_USER}/{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_SERVICE_NAME}"
 
-    # Función para establecer la conexión a la base de datos
+# Función para establecer la conexión a la base de datos
     def get_db_connection():
         """Establece y devuelve una conexión a la base de datos Oracle."""
         try:
@@ -32,14 +32,14 @@ app = Flask(__name__)
             print(f"Error al conectar a la base de datos: {error_obj.message}")
             return None
 
-    # --- Endpoint para Consultar Facturas Pendientes ---
-    # Método: GET
-    # URL: /api/facturas
-    # Parámetros (Query Parameters):
-    #   - tipo_id: Tipo de identificación del cliente (ej. 'V', 'J', 'G')
-    #   - num_id: Número de identificación del cliente (ej. '12345678')
-    @app.route('/api/facturas', methods=['GET'])
-    def get_facturas():
+# --- Endpoint para Consultar Facturas Pendientes ---
+# Método: GET
+# URL: /api/facturas
+# Parámetros (Query Parameters):
+#   - tipo_id: Tipo de identificación del cliente (ej. 'V', 'J', 'G')
+#   - num_id: Número de identificación del cliente (ej. '12345678')
+@app.route('/api/facturas', methods=['GET'])
+  def get_facturas():
         """
         Consulta y devuelve las facturas pendientes de un cliente.
         Requiere 'tipo_id' y 'num_id' como parámetros de consulta.
