@@ -6,7 +6,7 @@ import cx_Oracle # Importa el módulo para conectar con Oracle
 import os
 from datetime import datetime
 
-    app = Flask(__name__)
+app = Flask(__name__)
 
     # --- Configuración de la Base de Datos ---
     # Las credenciales se cargan de variables de entorno o usan valores por defecto.
