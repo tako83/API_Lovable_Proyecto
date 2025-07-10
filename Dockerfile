@@ -1,10 +1,10 @@
-# Dockerfile para la API de Lovable con Oracle Instant Client (Ajuste de Ruta)
+# Dockerfile para la API de Lovable con Instalación Robusta de Oracle Instant Client
 
 # Usa una imagen base de Python
 FROM python:3.9-slim-buster
 
 # Define la versión del Oracle Instant Client y la URL de descarga
-# Usaremos la versión "Basic Light" que es más pequeña y a veces más fácil de instalar.
+# Usaremos la versión "Basic Lite" que es más pequeña y a veces más fácil de instalar.
 # Asegúrate de que la URL sea correcta y la versión exista en Oracle.
 ENV ORACLE_CLIENT_VERSION=19.19.0.0.0
 ENV ORACLE_CLIENT_PACKAGE=instantclient-basiclite-linux.x64-${ORACLE_CLIENT_VERSION}.zip
@@ -14,24 +14,37 @@ ENV ORACLE_CLIENT_URL=https://download.oracle.com/otn_software/linux/instantclie
 WORKDIR /app
 
 # Instala las dependencias del sistema necesarias para Oracle Instant Client y cx_Oracle
-# (libaio1 y unzip son cruciales)
+# libaio1, unzip, libnsl2, libstdc++6 son cruciales
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     libaio1 \
     unzip \
+    libnsl2 \
+    libstdc++6 \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
+# Crea el directorio para Oracle Instant Client
+RUN mkdir -p /opt/oracle/instantclient
+
 # Descarga, descomprime e instala Oracle Instant Client
-# Lo instalaremos directamente en /usr/local/lib para que sea más fácil de encontrar
+# Descomprimimos directamente en el directorio que creamos
 RUN wget -O /tmp/${ORACLE_CLIENT_PACKAGE} ${ORACLE_CLIENT_URL} && \
-    unzip /tmp/${ORACLE_CLIENT_PACKAGE} -d /usr/local/lib && \
-    rm /tmp/${ORACLE_CLIENT_PACKAGE} && \
-    ln -s /usr/local/lib/instantclient_${ORACLE_CLIENT_VERSION} /usr/local/lib/instantclient_19_19
+    unzip /tmp/${ORACLE_CLIENT_PACKAGE} -d /opt/oracle/instantclient && \
+    rm /tmp/${ORACLE_CLIENT_PACKAGE}
+
+# Mueve los contenidos de la carpeta versionada directamente a /opt/oracle/instantclient
+# Esto es para asegurar que las librerías estén en la ruta principal esperada
+RUN mv /opt/oracle/instantclient/instantclient_${ORACLE_CLIENT_VERSION}/* /opt/oracle/instantclient/ && \
+    rmdir /opt/oracle/instantclient/instantclient_${ORACLE_CLIENT_VERSION}
+
+# Configura las librerías dinámicas para que el sistema las encuentre
+# Crea un archivo de configuración para ldconfig y lo ejecuta
+RUN echo /opt/oracle/instantclient > /etc/ld.so.conf.d/oracle-instantclient.conf && \
+    ldconfig
 
 # Exporta la variable de entorno LD_LIBRARY_PATH para que cx_Oracle encuentre las librerías
-# Apunta directamente a la carpeta donde se descomprimió el cliente
-ENV LD_LIBRARY_PATH=/usr/local/lib/instantclient_19_19:$LD_LIBRARY_PATH
+ENV LD_LIBRARY_PATH=/opt/oracle/instantclient:$LD_LIBRARY_PATH
 
 # Copia el archivo de requisitos e instala las dependencias de Python
 COPY requirements.txt .
