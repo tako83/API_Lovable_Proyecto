@@ -11,8 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# **NUEVO PASO: Actualizar pip antes de instalar dependencias**
-RUN pip install --upgrade pip
+# **NUEVOS PASOS: Actualizar pip y limpiar su caché**
+RUN pip install --upgrade pip && \
+    pip cache purge
 
 # Copia el archivo de requisitos e instala las dependencias de Python
 COPY requirements.txt .
