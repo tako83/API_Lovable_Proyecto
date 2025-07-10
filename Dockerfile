@@ -1,11 +1,12 @@
-# Dockerfile para la API de Lovable con Instalación Robusta de Oracle Instant Client
+# Dockerfile para la API de Lovable con Instalación Robusta y Verificada de Oracle Instant Client
 
 # Usa una imagen base de Python
 FROM python:3.9-slim-buster
 
 # Define la versión del Oracle Instant Client y la URL de descarga
-# Usaremos la versión "Basic Lite" que es más pequeña y a veces más fácil de instalar.
-# Asegúrate de que la URL sea correcta y la versión exista en Oracle.
+# Usaremos la versión "Basic Lite" que es más pequeña.
+# **¡IMPORTANTE!** Verifica que esta URL de descarga directa siga funcionando.
+# Si Oracle cambia la URL o requiere autenticación, este paso fallará.
 ENV ORACLE_CLIENT_VERSION=19.19.0.0.0
 ENV ORACLE_CLIENT_PACKAGE=instantclient-basiclite-linux.x64-${ORACLE_CLIENT_VERSION}.zip
 ENV ORACLE_CLIENT_URL=https://download.oracle.com/otn_software/linux/instantclient/1919000/${ORACLE_CLIENT_PACKAGE}
@@ -15,6 +16,7 @@ WORKDIR /app
 
 # Instala las dependencias del sistema necesarias para Oracle Instant Client y cx_Oracle
 # libaio1, unzip, libnsl2, libstdc++6 son cruciales
+# También instalamos ca-certificates para wget/curl si hay problemas de SSL
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     libaio1 \
@@ -22,14 +24,16 @@ RUN apt-get update && \
     libnsl2 \
     libstdc++6 \
     build-essential \
+    ca-certificates \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Crea el directorio para Oracle Instant Client
 RUN mkdir -p /opt/oracle/instantclient
 
 # Descarga, descomprime e instala Oracle Instant Client
-# Descomprimimos directamente en el directorio que creamos
-RUN wget -O /tmp/${ORACLE_CLIENT_PACKAGE} ${ORACLE_CLIENT_URL} && \
+# Usamos curl en lugar de wget por si hay problemas de redirección o certificados
+RUN curl -o /tmp/${ORACLE_CLIENT_PACKAGE} ${ORACLE_CLIENT_URL} && \
     unzip /tmp/${ORACLE_CLIENT_PACKAGE} -d /opt/oracle/instantclient && \
     rm /tmp/${ORACLE_CLIENT_PACKAGE}
 
