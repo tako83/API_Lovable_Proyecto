@@ -1,79 +1,216 @@
-# Dockerfile para la API de Lovable con Instalación Robusta y Verificada de Oracle Instant Client
+# app.py - Código Principal de la API para Lovable
+# Este archivo contiene la lógica principal de la API Flask.
 
-# Usa una imagen base de Python
-FROM python:3.9-slim-buster
+from flask import Flask, request, jsonify
+import oracledb # ¡CAMBIO AQUÍ! Ahora importamos 'oracledb'
+import os
+from datetime import datetime
 
-# Define la versión del Oracle Instant Client y la URL de descarga
-# Usaremos la versión "Basic Lite" que es más pequeña.
-# **¡IMPORTANTE!** Verifica que esta URL de descarga directa siga funcionando.
-# Si Oracle cambia la URL o requiere autenticación, este paso fallará.
-ENV ORACLE_CLIENT_VERSION=19.19.0.0.0
-ENV ORACLE_CLIENT_PACKAGE=instantclient-basiclite-linux.x64-${ORACLE_CLIENT_VERSION}.zip
-ENV ORACLE_CLIENT_URL=https://download.oracle.com/otn_software/linux/instantclient/1919000/${ORACLE_CLIENT_PACKAGE}
+app = Flask(__name__)
 
-# Establece el directorio de trabajo dentro del contenedor
-WORKDIR /app
+# --- Configuración de la Base de Datos ---
+# Las credenciales se cargan de variables de entorno o usan valores por defecto.
+DB_USER = os.environ.get('DB_USER', 'madiaz')
+DB_PASSWORD = os.environ.get('DB_PASSWORD', 'madiaz01')
+DB_HOST = os.environ.get('DB_HOST', '10.212.135.10')
+DB_PORT = os.environ.get('DB_PORT', '1521')
+DB_SERVICE_NAME = os.environ.get('DB_SERVICE_NAME', 'ATRIOD')
 
-# Instala las dependencias del sistema necesarias para Oracle Instant Client y cx_Oracle
-# Incluye wget, curl, ca-certificates, locales, tzdata, libaio1, libnsl2, libstdc++6, build-essential
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    wget \
-    curl \
-    ca-certificates \
-    locales \
-    tzdata \
-    libaio1 \
-    libnsl2 \
-    libstdc++6 \
-    build-essential \
-    unzip \
-    && rm -rf /var/lib/apt/lists/*
+# Cadena de conexión Oracle para python-oracledb
+# Formato: host:port/service_name
+# oracledb.connect usa los parámetros por separado, no una cadena completa
+# La cadena de conexión para el Thin Client es "host:port/service_name"
+ORACLE_DSN = f"{DB_HOST}:{DB_PORT}/{DB_SERVICE_NAME}"
 
-# Configura la localización para evitar warnings (a veces necesario para apt-get)
-RUN locale-gen en_US.UTF-8
-ENV LANG en_US.UTF-8
-ENV LANGUAGE en_US:en
-ENV LC_ALL en_US.UTF-8
+# Función para establecer la conexión a la base de datos
+def get_db_connection():
+    """Establece y devuelve una conexión a la base de datos Oracle usando python-oracledb."""
+    try:
+        # Conexión en modo Thin Client (no requiere Instant Client)
+        connection = oracledb.connect(user=DB_USER, password=DB_PASSWORD, dsn=ORACLE_DSN)
+        return connection
+    except oracledb.Error as e: # ¡CAMBIO AQUÍ! Ahora capturamos errores de 'oracledb'
+        error_obj, = e.args
+        print(f"Error al conectar a la base de datos: {error_obj.message}")
+        return None
 
-# Crea el directorio para Oracle Instant Client
-RUN mkdir -p /opt/oracle/instantclient
+# --- Endpoint para Consultar Facturas Pendientes ---
+# Método: GET
+# URL: /api/facturas
+# Parámetros (Query Parameters):
+#   - tipo_id: Tipo de identificación del cliente (ej. 'V', 'J', 'G')
+#   - num_id: Número de identificación del cliente (ej. '12345678')
+@app.route('/api/facturas', methods=['GET'])
+def get_facturas():
+    """
+    Consulta y devuelve las facturas pendientes de un cliente.
+    Requiere 'tipo_id' y 'num_id' como parámetros de consulta.
+    """
+    tipo_id = request.args.get('tipo_id')
+    num_id = request.args.get('num_id')
 
-# Descarga, descomprime e instala Oracle Instant Client
-# Usamos curl -L para seguir redirecciones si la URL lo requiere
-RUN curl -L -o /tmp/${ORACLE_CLIENT_PACKAGE} ${ORACLE_CLIENT_URL} && \
-    unzip /tmp/${ORACLE_CLIENT_PACKAGE} -d /opt/oracle/instantclient && \
-    rm /tmp/${ORACLE_CLIENT_PACKAGE}
+    # Validación de parámetros
+    if not tipo_id or not num_id:
+        return jsonify({"error": "Los parámetros 'tipo_id' y 'num_id' son obligatorios."}), 400
 
-# Mueve los contenidos de la carpeta versionada directamente a /opt/oracle/instantclient
-# Esto es para asegurar que las librerías estén en la ruta principal esperada
-RUN mv /opt/oracle/instantclient/instantclient_${ORACLE_CLIENT_VERSION}/* /opt/oracle/instantclient/ && \
-    rmdir /opt/oracle/instantclient/instantclient_${ORACLE_CLIENT_VERSION}
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({"error": "No se pudo conectar a la base de datos."}), 500
 
-# Crea enlaces simbólicos a las librerías principales en /usr/lib
-# Esto es CRÍTICO para que el sistema las encuentre, ya que /usr/lib es una ruta estándar de búsqueda.
-RUN ln -s /opt/oracle/instantclient/libclntsh.so /usr/lib/libclntsh.so && \
-    ln -s /opt/oracle/instantclient/libocci.so /usr/lib/libocci.so && \
-    ln -s /opt/oracle/instantclient/libnnz19.so /usr/lib/libnnz19.so
+    cursor = connection.cursor()
+    facturas = []
 
-# Configura las librerías dinámicas para que el sistema las encuentre
-# Crea un archivo de configuración para ldconfig y lo ejecuta
-RUN echo /opt/oracle/instantclient > /etc/ld.so.conf.d/oracle-instantclient.conf && \
-    ldconfig
+    try:
+        # Adaptación de la consulta SQL de APEX.
+        # Se han reemplazado los alias de DB Link y el parámetro APEX por los nombres de tabla directos
+        # y los parámetros de la API.
+        # Se asume que IDEFACT en FACTURA_CIA es el IDEFACT que se une con NOT_DEPOSITO_FACT.
+        # Se asume que TIPOID y NUMID en FACTURA_CIA y ACREENCIA_CIA son la identificación del cliente.
+        # Se asume que la unión con BLVAL es por p.codprod = l.codlval y l.tipolval = 'FTOPAGO'
+        # Se asume que 'S' en n.indsel significa "seleccionado" o "pendiente".
+        sql_query = """
+        SELECT
+            FC.IDEFACT AS NUMERO_FACTURA,
+            FC.MTOFACTLOCAL AS MONTO_FACTURA_LOCAL,
+            P.NUMPOL AS NUMERO_POLIZA,
+            R.NUMREC AS NUMERO_RECIBO,
+            R.CODFRACCIONAMIENTO AS FRACCIONAMIENTO,
+            FC.FECVENCFACT AS FECHA_VENCIMIENTO,
+            FC.MTOFACTMONEDA AS MONTO_FACTURA_MONEDA,
+            NDF.INDSEL AS INDICADOR_SELECCION,
+            FC.TIPOID AS TIPO_IDENTIFICACION,
+            FC.NUMID AS NUMERO_IDENTIFICACION
+        FROM
+            ACSEL.FACTURA_CIA FC
+        INNER JOIN
+            ACSEL.NOT_DEPOSITO_FACT NDF ON FC.IDEFACT = NDF.IDEFACT
+        INNER JOIN
+            ACSEL.ACREENCIA_CIA A ON FC.IDEFACT = A.IDEFACT
+        INNER JOIN
+            ACSEL.RECIBO R ON A.NUMACRE = R.NUMACRE
+        INNER JOIN
+            ATRIOWEB.POLIZA P ON R.IDEPOL = P.IDEPOL
+        LEFT JOIN
+            ACSEL.BLVAL L ON P.CODPROD = L.CODLVAL AND L.TIPOLVAL = 'FTOPAGO' AND L.ACTIVO = 'S'
+        WHERE
+            FC.TIPOID = :tipo_id AND FC.NUMID = :num_id
+        GROUP BY
+            FC.IDEFACT, FC.MTOFACTLOCAL, P.NUMPOL, R.NUMREC, R.CODFRACCIONAMIENTO,
+            FC.FECVENCFACT, FC.MTOFACTMONEDA, NDF.INDSEL, FC.TIPOID, FC.NUMID
+        ORDER BY
+            FC.IDEFACT
+        """
+        # Ejecuta la consulta con los parámetros
+        cursor.execute(sql_query, tipo_id=tipo_id, num_id=num_id)
 
-# Exporta la variable de entorno LD_LIBRARY_PATH para que cx_Oracle encuentre las librerías
-ENV LD_LIBRARY_PATH=/opt/oracle/instantclient:$LD_LIBRARY_PATH
+        # Obtiene los nombres de las columnas
+        columns = [col[0] for col in cursor.description]
 
-# Copia el archivo de requisitos e instala las dependencias de Python
-# Importante: cx_Oracle se instalará DESPUÉS de que las librerías del cliente estén en su lugar
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+        # Recorre los resultados y los añade a la lista de facturas
+        for row in cursor:
+            factura = dict(zip(columns, row))
+            facturas.append(factura)
 
-# Copia el resto de tu aplicación al directorio de trabajo
-COPY . .
+        return jsonify(facturas), 200
 
-# Expone el puerto en el que la aplicación Flask escuchará
-EXPOSE 5000
+    except oracledb.Error as e: # ¡CAMBIO AQUÍ!
+        error_obj, = e.args
+        print(f"Error al ejecutar la consulta de facturas: {error_obj.message}")
+        return jsonify({"error": f"Error en la base de datos al consultar facturas: {error_obj.message}"}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()
 
-# Define el comando para iniciar la aplicación usando Gunicorn
-CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:5000"]
+# --- Endpoint para Registrar Notificaciones de Pago ---
+# Método: POST
+# URL: /api/notificar_pago
+# Cuerpo de la solicitud (JSON):
+#   - referencia_cliente: Identificador de la transacción/cliente (VARCHAR2(100))
+#   - monto: Monto del pago (NUMBER(18,2))
+#   - moneda: Código de la moneda (VARCHAR2(3))
+#   - estado: Estado de la transacción (VARCHAR2(20))
+#   - fecha_transaccion: Fecha y hora de la transacción (TIMESTAMP(6))
+#   - firma_recibida: Firma de seguridad recibida (VARCHAR2(500))
+#   - datos_completos: (Opcional) JSON o CLOB con todos los datos de la notificación
+@app.route('/api/notificar_pago', methods=['POST'])
+def notificar_pago():
+    """
+    Registra una notificación de pago en la tabla BANESCO_TRANSACCIONES.
+    Requiere datos en formato JSON en el cuerpo de la solicitud.
+    """
+    data = request.get_json()
+
+    # Validación de datos de entrada
+    required_fields = ["referencia_cliente", "monto", "moneda", "estado", "fecha_transaccion", "firma_recibida"]
+    if not all(field in data for field in required_fields):
+        return jsonify({"error": f"Faltan campos obligatorios. Se requieren: {', '.join(required_fields)}"}), 400
+
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({"error": "No se pudo conectar a la base de datos."}), 500
+
+    cursor = connection.cursor()
+
+    try:
+        # Generar un ID para la transacción (si la tabla no tiene una secuencia)
+        # Asumimos que la tabla ACSEL.BANESCO_TRANSACCIONES tiene una secuencia o que ID es autoincremental.
+        # Si no es autoincremental o no hay secuencia, el DBA debe proporcionar un método para obtener un ID único.
+        
+        # Convertir fecha_transaccion a formato de fecha/hora de Oracle
+        try:
+            fecha_transaccion_dt = datetime.fromisoformat(data['fecha_transaccion'])
+        except ValueError:
+            return jsonify({"error": "Formato de 'fecha_transaccion' inválido. Use formato ISO (YYYY-MM-DDTHH:MM:SS)."}), 400
+
+        sql_insert = """
+        INSERT INTO ACSEL.BANESCO_TRANSACCIONES (
+            ID, REFERENCIA_CLIENTE, MONTO, MONEDA, ESTADO, FECHA_TRANSACCION,
+            FIRMA_RECIBIDA, FIRMA_VALIDA, DATOS_COMPLETOS, FECHA_PROCESAMIENTO,
+            IP_ORIGEN, PROCESADO, MENSAJE_ERROR
+        ) VALUES (
+            NULL, :referencia_cliente, :monto, :moneda, :estado, :fecha_transaccion,
+            :firma_recibida, :firma_valida, :datos_completos, SYSTIMESTAMP,
+            :ip_origen, :procesado, :mensaje_error
+        )
+        """
+        # Preparar los parámetros para la inserción
+        params = {
+            "referencia_cliente": data['referencia_cliente'],
+            "monto": data['monto'],
+            "moneda": data['moneda'],
+            "estado": data['estado'],
+            "fecha_transaccion": fecha_transaccion_dt,
+            "firma_recibida": data['firma_recibida'],
+            "firma_valida": data.get('firma_valida', 'N'),
+            "datos_completos": data.get('datos_completos', None),
+            "ip_origen": request.remote_addr,
+            "procesado": data.get('procesado', 'N'),
+            "mensaje_error": data.get('mensaje_error', None)
+        }
+
+        cursor.execute(sql_insert, params)
+        connection.commit()
+
+        return jsonify({"message": "Notificación de pago registrada exitosamente.", "id_transaccion": cursor.lastrowid}), 201
+
+    except oracledb.Error as e: # ¡CAMBIO AQUÍ!
+        error_obj, = e.args
+        connection.rollback()
+        print(f"Error al registrar la notificación de pago: {error_obj.message}")
+        return jsonify({"error": f"Error en la base de datos al registrar pago: {error_obj.message}"}), 500
+    except Exception as e:
+        print(f"Error inesperado: {str(e)}")
+        return jsonify({"error": f"Error inesperado al procesar la solicitud: {str(e)}"}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()
+
+# --- Ejecución de la Aplicación ---
+if __name__ == '__main__':
+    print("La aplicación Flask está lista para ser desplegada.")
+    print("Para ejecutar en desarrollo, descomenta la línea app.run(debug=True, ...)")
+    print("Para producción, usa Gunicorn o Apache mod_wsgi.")
