@@ -2,7 +2,7 @@
     # Este archivo lista todas las librerías de Python necesarias para ejecutar la API.
 
     Flask==2.3.2
-    python-oracledb==1.4.1 # ¡ESTE ES EL CAMBIO CLAVE!
+    python-oracledb==1.4.1 # ¡ESTE ES EL CAMBIO CLAVE Y CORRECTO!
     python-dotenv==1.0.0
     gunicorn
     
