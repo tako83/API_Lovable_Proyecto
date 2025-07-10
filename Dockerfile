@@ -15,25 +15,33 @@ ENV ORACLE_CLIENT_URL=https://download.oracle.com/otn_software/linux/instantclie
 WORKDIR /app
 
 # Instala las dependencias del sistema necesarias para Oracle Instant Client y cx_Oracle
-# libaio1, unzip, libnsl2, libstdc++6 son cruciales
-# También instalamos ca-certificates para wget/curl si hay problemas de SSL
+# Incluye wget, curl, ca-certificates, locales, tzdata, libaio1, libnsl2, libstdc++6, build-essential
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+    wget \
+    curl \
+    ca-certificates \
+    locales \
+    tzdata \
     libaio1 \
-    unzip \
     libnsl2 \
     libstdc++6 \
     build-essential \
-    ca-certificates \
-    wget \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
+
+# Configura la localización para evitar warnings (a veces necesario para apt-get)
+RUN locale-gen en_US.UTF-8
+ENV LANG en_US.UTF-8
+ENV LANGUAGE en_US:en
+ENV LC_ALL en_US.UTF-8
 
 # Crea el directorio para Oracle Instant Client
 RUN mkdir -p /opt/oracle/instantclient
 
 # Descarga, descomprime e instala Oracle Instant Client
-# Usamos curl en lugar de wget por si hay problemas de redirección o certificados
-RUN curl -o /tmp/${ORACLE_CLIENT_PACKAGE} ${ORACLE_CLIENT_URL} && \
+# Usamos curl -L para seguir redirecciones si la URL lo requiere
+RUN curl -L -o /tmp/${ORACLE_CLIENT_PACKAGE} ${ORACLE_CLIENT_URL} && \
     unzip /tmp/${ORACLE_CLIENT_PACKAGE} -d /opt/oracle/instantclient && \
     rm /tmp/${ORACLE_CLIENT_PACKAGE}
 
@@ -41,6 +49,12 @@ RUN curl -o /tmp/${ORACLE_CLIENT_PACKAGE} ${ORACLE_CLIENT_URL} && \
 # Esto es para asegurar que las librerías estén en la ruta principal esperada
 RUN mv /opt/oracle/instantclient/instantclient_${ORACLE_CLIENT_VERSION}/* /opt/oracle/instantclient/ && \
     rmdir /opt/oracle/instantclient/instantclient_${ORACLE_CLIENT_VERSION}
+
+# Crea enlaces simbólicos a las librerías principales en /usr/lib
+# Esto es CRÍTICO para que el sistema las encuentre, ya que /usr/lib es una ruta estándar de búsqueda.
+RUN ln -s /opt/oracle/instantclient/libclntsh.so /usr/lib/libclntsh.so && \
+    ln -s /opt/oracle/instantclient/libocci.so /usr/lib/libocci.so && \
+    ln -s /opt/oracle/instantclient/libnnz19.so /usr/lib/libnnz19.so
 
 # Configura las librerías dinámicas para que el sistema las encuentre
 # Crea un archivo de configuración para ldconfig y lo ejecuta
@@ -51,6 +65,7 @@ RUN echo /opt/oracle/instantclient > /etc/ld.so.conf.d/oracle-instantclient.conf
 ENV LD_LIBRARY_PATH=/opt/oracle/instantclient:$LD_LIBRARY_PATH
 
 # Copia el archivo de requisitos e instala las dependencias de Python
+# Importante: cx_Oracle se instalará DESPUÉS de que las librerías del cliente estén en su lugar
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
