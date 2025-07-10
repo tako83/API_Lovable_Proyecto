@@ -6,12 +6,13 @@ FROM python:3.9-slim-buster
 # Establece el directorio de trabajo dentro del contenedor
 WORKDIR /app
 
-# Instala las dependencias del sistema necesarias (si las hay)
-# Para python-oracledb en modo Thin Client, no necesitamos librerías de Oracle Instant Client.
-# build-essential es útil si alguna otra dependencia de Python necesita compilarse.
+# Instala las dependencias del sistema necesarias
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
+
+# **NUEVO PASO: Actualizar pip antes de instalar dependencias**
+RUN pip install --upgrade pip
 
 # Copia el archivo de requisitos e instala las dependencias de Python
 COPY requirements.txt .
